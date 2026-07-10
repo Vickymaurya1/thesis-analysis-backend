@@ -5,10 +5,17 @@ from sqlalchemy.exc import IntegrityError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from sqlalchemy import text
 from app.routers import auth, theses, notifications
 from app.database import engine
 from app.models import Base
 from app.limiter import limiter
+
+# Automatically create vector extension if using PostgreSQL before tables are created
+if engine.dialect.name == "postgresql":
+    with engine.connect() as conn:
+        with conn.begin():
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
 
 # Automatically create tables for quick local setup / sqlite testing
 Base.metadata.create_all(bind=engine)
