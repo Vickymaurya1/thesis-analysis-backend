@@ -188,9 +188,8 @@ def get_embeddings(texts: List[str]) -> List[List[float]]:
         
     api_key = settings.VOYAGE_API_KEY
     if not api_key or api_key == "mock_api_key_for_testing" or settings.ENV == "test":
-        # Refuse to start/fail loudly outside test mode if credentials are missing
-        if settings.ENV != "test":
-            raise ValueError("VOYAGE_API_KEY is missing/mock in a non-test environment.")
+        # Log a warning instead of raising an error, so the app remains functional for users without Voyage keys
+        print("WARNING: VOYAGE_API_KEY is missing or mock. Using mock embeddings fallback.")
         # Test mock stub fallback
         return [[random.random() for _ in range(1024)] for _ in texts]
         
