@@ -29,7 +29,7 @@ app = FastAPI(
 # CORS configuration allowing Vercel and localhost frontend origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://thesis-rag-frontend.vercel.app"],
+    allow_origins=["http://localhost:3000", "https://thesis-analysis-frontend-g83h.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
