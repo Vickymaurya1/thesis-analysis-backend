@@ -1,12 +1,12 @@
 import os
 import shutil
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import (
     User, Thesis, ThesisVersion, CitationRecord, AnalysisSnapshot,
     Flag, FlagTypeEnum, RoleEnum, ReviewerSimSession, ThesisStatusEnum
@@ -101,9 +101,22 @@ def get_thesis_versions(
     versions = db.query(ThesisVersion).filter(ThesisVersion.thesis_id == thesis_id).order_by(ThesisVersion.version_number.asc()).all()
     return versions
 
+async def process_thesis_version_background(version_id: str, file_path: str):
+    db = SessionLocal()
+    try:
+        version = db.query(ThesisVersion).filter(ThesisVersion.id == version_id).first()
+        if version:
+            await run_ingestion_pipeline(db, version, file_path)
+            await run_on_thesis_update(db, version)
+    except Exception as e:
+        print(f"Error processing background thesis update: {e}")
+    finally:
+        db.close()
+
 @router.post("/{thesis_id}/versions", response_model=ThesisVersionResponse, status_code=status.HTTP_201_CREATED)
 async def upload_thesis_version(
     thesis_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -176,11 +189,8 @@ async def upload_thesis_version(
     db.commit()
     db.refresh(new_version)
     
-    # Run text ingestion pipeline
-    await run_ingestion_pipeline(db, new_version, file_path)
-    
-    # Trigger full orchestrator update (incremental + notifications)
-    await run_on_thesis_update(db, new_version)
+    # Run text ingestion and orchestrator update in the background to prevent HTTP timeout
+    background_tasks.add_task(process_thesis_version_background, str(new_version.id), file_path)
     
     return new_version
 
