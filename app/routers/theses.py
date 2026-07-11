@@ -60,8 +60,8 @@ def create_thesis(
         owner_id=current_user.id,
         advisor_id=advisor_id,
         title=thesis_in.title,
-        field=thesis_in.field,
-        degree_level=thesis_in.degree_level
+        field=thesis_in.field if thesis_in.field else current_user.field_of_study,
+        degree_level=thesis_in.degree_level if thesis_in.degree_level else current_user.degree
     )
     db.add(new_thesis)
     db.commit()

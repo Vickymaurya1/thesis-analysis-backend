@@ -46,6 +46,9 @@ class ThesisCreate(BaseModel):
 class ThesisResponse(BaseModel):
     id: str
     owner_id: str
+    owner_name: Optional[str] = None
+    owner_degree: Optional[str] = None
+    owner_department: Optional[str] = None
     advisor_id: Optional[str] = None
     title: str
     field: Optional[str] = None

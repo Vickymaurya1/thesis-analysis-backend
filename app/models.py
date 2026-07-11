@@ -104,6 +104,18 @@ class Thesis(Base):
     advisor = relationship("User", back_populates="theses_advised", foreign_keys=[advisor_id])
     versions = relationship("ThesisVersion", back_populates="thesis")
 
+    @property
+    def owner_name(self):
+        return self.owner.name if self.owner else ""
+
+    @property
+    def owner_degree(self):
+        return self.owner.degree if self.owner else ""
+
+    @property
+    def owner_department(self):
+        return self.owner.department if self.owner else ""
+
 
 class ThesisVersion(Base):
     __tablename__ = "thesis_versions"
