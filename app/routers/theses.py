@@ -36,6 +36,22 @@ router = APIRouter(prefix="/theses", tags=["theses"])
 class ThesisStatusUpdate(BaseModel):
     status: str
 
+@router.get("", response_model=List[ThesisResponse])
+def list_theses(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role == RoleEnum.student:
+        # Students see only their own theses
+        theses = db.query(Thesis).filter(Thesis.owner_id == current_user.id).all()
+    elif current_user.role == RoleEnum.teacher:
+        # Teachers see theses they are advising
+        theses = db.query(Thesis).filter(Thesis.advisor_id == current_user.id).all()
+    else:
+        # Admin sees all
+        theses = db.query(Thesis).all()
+    return theses
+
 @router.post("", response_model=ThesisResponse, status_code=status.HTTP_201_CREATED)
 def create_thesis(
     thesis_in: ThesisCreate,
