@@ -1,3 +1,4 @@
+import traceback
 from sqlalchemy.orm import Session
 from app.models import ThesisVersion, Flag, AnalysisSnapshot, Notification, SeverityEnum
 from app.services.citation import run_citation_verification_pipeline
@@ -6,15 +7,41 @@ from app.services.plagiarism import run_plagiarism_review_pipeline
 from app.services.novelty import run_novelty_review_pipeline
 
 async def run_on_thesis_update(db: Session, version: ThesisVersion):
-    # Run pipelines sequentially (already includes incremental caches)
-    await run_citation_verification_pipeline(db, version)
-    
-    run_plagiarism_review_pipeline(db, version)
-    run_quality_review_pipeline(db, version)
-    run_novelty_review_pipeline(db, version)
-    
+    # Run pipelines sequentially, each wrapped to prevent one failure from blocking the rest
+    try:
+        await run_citation_verification_pipeline(db, version)
+        print(f"Orchestrator: Citation verification completed for version {version.id}")
+    except Exception as e:
+        print(f"Orchestrator: Citation verification FAILED for version {version.id}")
+        traceback.print_exc()
+
+    try:
+        run_plagiarism_review_pipeline(db, version)
+        print(f"Orchestrator: Plagiarism review completed for version {version.id}")
+    except Exception as e:
+        print(f"Orchestrator: Plagiarism review FAILED for version {version.id}")
+        traceback.print_exc()
+
+    try:
+        run_quality_review_pipeline(db, version)
+        print(f"Orchestrator: Quality review completed for version {version.id}")
+    except Exception as e:
+        print(f"Orchestrator: Quality review FAILED for version {version.id}")
+        traceback.print_exc()
+
+    try:
+        run_novelty_review_pipeline(db, version)
+        print(f"Orchestrator: Novelty review completed for version {version.id}")
+    except Exception as e:
+        print(f"Orchestrator: Novelty review FAILED for version {version.id}")
+        traceback.print_exc()
+
     # Write notifications
-    write_notifications_for_new_flags(db, version)
+    try:
+        write_notifications_for_new_flags(db, version)
+    except Exception as e:
+        print(f"Orchestrator: Notification writing FAILED for version {version.id}")
+        traceback.print_exc()
 
 def write_notifications_for_new_flags(db: Session, version: ThesisVersion):
     thesis = version.thesis

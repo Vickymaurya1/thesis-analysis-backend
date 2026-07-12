@@ -1,4 +1,5 @@
 import os
+import traceback
 import shutil
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, BackgroundTasks
@@ -105,11 +106,29 @@ async def process_thesis_version_background(version_id: str, file_path: str):
     db = SessionLocal()
     try:
         version = db.query(ThesisVersion).filter(ThesisVersion.id == version_id).first()
-        if version:
+        if not version:
+            print(f"Background task: Version {version_id} not found in DB.")
+            return
+
+        # Step 1: Ingestion pipeline (text extraction, chunking, embeddings)
+        try:
             await run_ingestion_pipeline(db, version, file_path)
+            print(f"Background task: Ingestion pipeline completed for version {version_id}")
+        except Exception as e:
+            print(f"Background task: Ingestion pipeline FAILED for version {version_id}")
+            traceback.print_exc()
+            # Don't return — try to run orchestrator even if ingestion partially failed
+
+        # Step 2: Orchestrator (citation, quality, plagiarism, novelty reviews)
+        try:
             await run_on_thesis_update(db, version)
+            print(f"Background task: Orchestrator completed for version {version_id}")
+        except Exception as e:
+            print(f"Background task: Orchestrator FAILED for version {version_id}")
+            traceback.print_exc()
     except Exception as e:
-        print(f"Error processing background thesis update: {e}")
+        print(f"Background task: Unexpected error for version {version_id}")
+        traceback.print_exc()
     finally:
         db.close()
 
@@ -456,6 +475,56 @@ def trigger_quality_review(
     db.commit()
     
     return snapshot.scores
+
+# ---------- CITATION VERIFICATION TRIGGER ----------
+
+@router.post("/{thesis_id}/citations/trigger", status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/hour", key_func=get_user_key)
+async def trigger_citation_verification(
+    request: Request,
+    thesis_id: str,
+    current_user: User = Depends(require_feature_access("citation_verification", AccessLevel.FULL)),
+    db: Session = Depends(get_db)
+):
+    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
+    if not thesis:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thesis not found"
+        )
+
+    assert_can_view_thesis(current_user, thesis)
+
+    if not thesis.current_version_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No versions uploaded yet"
+        )
+
+    version = db.query(ThesisVersion).filter(ThesisVersion.id == thesis.current_version_id).first()
+    if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current thesis version not found"
+        )
+
+    from app.services.citation import run_citation_verification_pipeline
+    records = await run_citation_verification_pipeline(db, version)
+
+    log_audit_action(
+        db,
+        user_id=current_user.id,
+        action="trigger_pipeline",
+        resource_type="CitationVerification",
+        resource_id=version.id,
+        details={
+            "pipeline_type": "citation_verification",
+            "records_created": len(records)
+        }
+    )
+    db.commit()
+
+    return {"status": "completed", "records_created": len(records)}
 
 # ---------- PHASE 2 PLAGIARISM & NOVELTY ENDPOINTS ----------
 
