@@ -335,14 +335,29 @@ async def run_ingestion_pipeline(db: Session, version: ThesisVersion, file_path:
     # 1. Extract text
     raw_text = extract_text_from_file(file_path)
     version.raw_text = raw_text
+    print(f"Ingestion: Extracted {len(raw_text)} characters from {file_path}")
     
     # 2. Section detection (Synonyms Regex first, LLM fallback)
     section_map = detect_sections_regex(raw_text)
+    print(f"Ingestion: Regex detected sections: {list(section_map.keys())}")
     if not section_map:
         section_map = detect_sections_llm(raw_text)
+        print(f"Ingestion: LLM detected sections: {list(section_map.keys())}")
         
     version.section_map = section_map
-    
+
+    # *** PHASE 1 COMMIT: persist raw_text and section_map immediately ***
+    # This ensures quality/citation pipelines always have text even if chunk storage fails
+    try:
+        db.commit()
+        print(f"Ingestion: Phase 1 commit done (raw_text + section_map saved)")
+    except Exception as e:
+        import traceback
+        print(f"Ingestion: Phase 1 commit FAILED")
+        traceback.print_exc()
+        db.rollback()
+        raise
+
     # 3. Chunking sections
     all_chunks = []
     for sec_name, range_vals in section_map.items():
@@ -350,43 +365,54 @@ async def run_ingestion_pipeline(db: Session, version: ThesisVersion, file_path:
         section_text = raw_text[start:end]
         section_chunks = chunk_section_text(section_text, sec_name)
         all_chunks.extend(section_chunks)
+    print(f"Ingestion: Created {len(all_chunks)} chunks")
         
     # 4. Generate Embeddings (batch call)
     chunk_contents = [c["content"] for c in all_chunks]
     embeddings = get_embeddings(chunk_contents)
     
     # 5. Create chunk rows and mirror to CorpusDocument
-    for idx, c in enumerate(all_chunks):
-        embedding_vector = embeddings[idx] if idx < len(embeddings) else None
-        db_chunk = Chunk(
-            version_id=version.id,
-            chunk_index=c["chunk_index"],
-            content=c["content"],
-            section_label=c["section_label"],
-            embedding=embedding_vector
-        )
-        db.add(db_chunk)
-        
-        corp_doc = CorpusDocument(
-            source_type=CorpusSourceEnum.internal_thesis,
-            source_thesis_id=version.thesis_id,
-            title=version.thesis.title if version.thesis else None,
-            chunk_text=c["content"],
-            embedding=embedding_vector
-        )
-        db.add(corp_doc)
-        
-    # 6. Compute diff if version > 1
-    if version.version_number > 1:
-        prev_version = db.query(ThesisVersion).filter(
-            ThesisVersion.thesis_id == version.thesis_id,
-            ThesisVersion.version_number == version.version_number - 1
-        ).first()
-        if prev_version and prev_version.section_map and prev_version.raw_text:
-            diff = compute_paragraph_diff(
-                prev_version.raw_text, prev_version.section_map,
-                version.raw_text, version.section_map
+    # *** PHASE 2 COMMIT: store chunks separately — failure here does NOT break pipeline ***
+    try:
+        for idx, c in enumerate(all_chunks):
+            embedding_vector = embeddings[idx] if idx < len(embeddings) else None
+            db_chunk = Chunk(
+                version_id=version.id,
+                chunk_index=c["chunk_index"],
+                content=c["content"],
+                section_label=c["section_label"],
+                embedding=embedding_vector
             )
-            version.diff_from_prev = diff
+            db.add(db_chunk)
             
-    db.commit()
+            corp_doc = CorpusDocument(
+                source_type=CorpusSourceEnum.internal_thesis,
+                source_thesis_id=version.thesis_id,
+                title=version.thesis.title if version.thesis else None,
+                chunk_text=c["content"],
+                embedding=embedding_vector
+            )
+            db.add(corp_doc)
+            
+        # 6. Compute diff if version > 1
+        if version.version_number > 1:
+            prev_version = db.query(ThesisVersion).filter(
+                ThesisVersion.thesis_id == version.thesis_id,
+                ThesisVersion.version_number == version.version_number - 1
+            ).first()
+            if prev_version and prev_version.section_map and prev_version.raw_text:
+                diff = compute_paragraph_diff(
+                    prev_version.raw_text, prev_version.section_map,
+                    version.raw_text, version.section_map
+                )
+                version.diff_from_prev = diff
+
+        db.commit()
+        print(f"Ingestion: Phase 2 commit done (chunks + corpus docs saved)")
+    except Exception as e:
+        import traceback
+        print(f"Ingestion: Phase 2 (chunks) FAILED — continuing without embeddings")
+        traceback.print_exc()
+        db.rollback()
+        # Non-fatal: quality/citation pipelines use raw_text/section_map, not chunks
+
