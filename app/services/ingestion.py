@@ -13,14 +13,18 @@ from app.config import settings
 from app.models import ThesisVersion, Chunk, CorpusDocument, CorpusSourceEnum
 from app.services.llm import llm_service
 
-# Define SECTION synonyms pattern
+# Define SECTION synonyms pattern — supports:
+# - Plain: "Introduction"
+# - Numbered: "1. Introduction"
+# - Chapter: "Chapter 1 Introduction"
+# - Chapter with colon: "Chapter 1: Introduction"
 SECTION_SYNONYMS = {
-    "introduction": re.compile(r'^(?:Chapter\s+\d+\s+)?(?:Introduction|Motivation)\b', re.IGNORECASE),
-    "related_work": re.compile(r'^(?:Chapter\s+\d+\s+)?(?:Related Work|Literature Review|Background)\b', re.IGNORECASE),
-    "methodology": re.compile(r'^(?:Chapter\s+\d+\s+)?(?:Methodology|Research Methodology|Methods|System Design|Experimental Setup)\b', re.IGNORECASE),
-    "results": re.compile(r'^(?:Chapter\s+\d+\s+)?(?:Results|Evaluation|Experimental Results|Findings|Experimental Evaluation)\b', re.IGNORECASE),
-    "discussion": re.compile(r'^(?:Chapter\s+\d+\s+)?(?:Discussion|Analysis)\b', re.IGNORECASE),
-    "conclusion": re.compile(r'^(?:Chapter\s+\d+\s+)?(?:Conclusion|Conclusion and Future Work|Summary)\b', re.IGNORECASE)
+    "introduction": re.compile(r'^(?:(?:Chapter\s+)?\d+[:\s.]*)?(?:Introduction|Motivation)\b', re.IGNORECASE),
+    "related_work": re.compile(r'^(?:(?:Chapter\s+)?\d+[:\s.]*)?(?:Related Work|Literature Review|Background)\b', re.IGNORECASE),
+    "methodology": re.compile(r'^(?:(?:Chapter\s+)?\d+[:\s.]*)?(?:Methodology|Research Methodology|Methods|System Design|Experimental Setup)\b', re.IGNORECASE),
+    "results": re.compile(r'^(?:(?:Chapter\s+)?\d+[:\s.]*)?(?:Results|Evaluation|Experimental Results|Findings|Experimental Evaluation)\b', re.IGNORECASE),
+    "discussion": re.compile(r'^(?:(?:Chapter\s+)?\d+[:\s.]*)?(?:Discussion|Analysis)\b', re.IGNORECASE),
+    "conclusion": re.compile(r'^(?:(?:Chapter\s+)?\d+[:\s.]*)?(?:Conclusion|Conclusion and Future Work|Summary)\b', re.IGNORECASE)
 }
 
 def extract_text_from_file(file_path: str) -> str:
