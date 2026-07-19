@@ -3,7 +3,7 @@ import traceback
 import shutil
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel
 
@@ -41,15 +41,13 @@ def list_theses(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    q = db.query(Thesis).options(joinedload(Thesis.versions))
     if current_user.role == RoleEnum.student:
-        # Students see only their own theses
-        theses = db.query(Thesis).filter(Thesis.owner_id == current_user.id).all()
+        theses = q.filter(Thesis.owner_id == current_user.id).all()
     elif current_user.role == RoleEnum.teacher:
-        # Teachers see theses they are advising
-        theses = db.query(Thesis).filter(Thesis.advisor_id == current_user.id).all()
+        theses = q.filter(Thesis.advisor_id == current_user.id).all()
     else:
-        # Admin sees all
-        theses = db.query(Thesis).all()
+        theses = q.all()
     return theses
 
 @router.post("", response_model=ThesisResponse, status_code=status.HTTP_201_CREATED)
@@ -91,13 +89,18 @@ def get_thesis(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    thesis = db.query(Thesis).filter(Thesis.id == thesis_id).first()
+    thesis = (
+        db.query(Thesis)
+        .options(joinedload(Thesis.versions))
+        .filter(Thesis.id == thesis_id)
+        .first()
+    )
     if not thesis:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Thesis not found"
         )
-        
+
     assert_can_view_thesis(current_user, thesis)
     return thesis
 

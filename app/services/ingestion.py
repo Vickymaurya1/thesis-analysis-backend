@@ -57,16 +57,24 @@ def detect_sections_regex(raw_text: str) -> Dict[str, List[int]]:
         clean_line = line.strip()
         if not clean_line or len(clean_line) > 120:
             continue
-            
-        # Strip numbering or headers prefix
-        normalized_line = re.sub(r'^(?:Chapter\s+\d+|\d+(?:\.\d+)*|#+)\s*', '', clean_line, flags=re.IGNORECASE).strip()
-        
+
+        # Strip chapter/section numbering prefix INCLUDING trailing colons, periods, spaces
+        # e.g. "Chapter 1: Introduction" → "Introduction"
+        # e.g. "3.2 Methodology" → "Methodology"
+        # e.g. "# Results" → "Results"
+        normalized_line = re.sub(
+            r'^(?:Chapter\s+\d+|Section\s+\d+|\d+(?:\.\d+)*|#+)\s*[:\-\.]?\s*',
+            '', clean_line, flags=re.IGNORECASE
+        ).strip()
+
         for section_name, pattern in SECTION_SYNONYMS.items():
             if section_name in section_starts:
                 continue
-            if pattern.match(normalized_line):
+            # Match against normalized (stripped) line AND original line
+            if pattern.match(normalized_line) or pattern.match(clean_line):
                 section_starts[section_name] = offset
                 break
+
                 
     if not section_starts:
         return {}

@@ -56,6 +56,7 @@ class ThesisResponse(BaseModel):
     status: ThesisStatusEnum
     current_version_id: Optional[str] = None
     created_at: datetime
+    versions: List["ThesisVersionResponse"] = []
 
     model_config = ConfigDict(from_attributes=True)
 
