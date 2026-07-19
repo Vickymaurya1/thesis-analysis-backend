@@ -48,41 +48,43 @@ def evaluate_section_llm(
     # If mock key or test mode, return a mocked response
     api_key = settings.ANTHROPIC_API_KEY
     if not api_key or api_key == "mock_api_key_for_testing" or settings.ENV == "test":
-        # Generate mock evaluation
-        # We can add helper logic to generate a validator-failing weakness if requested
-        if "generate_invalid_weakness" in section_text:
-            return {
-                "score": 50,
-                "strengths": ["Clear formatting."],
-                "weaknesses": [
-                    {
-                        "issue": "Missing baseline.",
-                        "evidence_excerpt": "",  # Empty excerpt, triggers ValueError!
-                        "severity": "critical",
-                        "suggested_fix": "Add baseline."
-                    }
-                ]
-            }
+        # Realistic mock: score based on section text length and content
+        text_len = len(section_text.strip())
         
-        if "weak" in section_text.lower() or "missing" in section_text.lower():
+        if text_len < 50:
+            # Very short section — low score
             return {
-                "score": 60,
-                "strengths": ["Solid grammar."],
-                "weaknesses": [
-                    {
-                        "issue": "No baseline comparison described.",
-                        "evidence_excerpt": "We trained our model on the data.",
-                        "severity": "critical",
-                        "suggested_fix": "Add at least one baseline."
-                    }
-                ]
+                "score": 35,
+                "strengths": [],
+                "weaknesses": [{
+                    "issue": f"Section '{section_name}' is too brief and lacks sufficient detail.",
+                    "evidence_excerpt": section_text.strip()[:200] or "Section content is minimal.",
+                    "severity": "critical",
+                    "suggested_fix": f"Expand the {section_name} section with more analysis and evidence."
+                }]
             }
-            
-        return {
-            "score": 85,
-            "strengths": ["Well written and clear."],
-            "weaknesses": []
-        }
+        elif text_len < 300:
+            # Short section — moderate score
+            return {
+                "score": 62,
+                "strengths": ["Section is present and structured."],
+                "weaknesses": [{
+                    "issue": f"Section '{section_name}' could benefit from more depth.",
+                    "evidence_excerpt": section_text.strip()[:200],
+                    "severity": "moderate",
+                    "suggested_fix": f"Add more detailed analysis and supporting evidence to {section_name}."
+                }]
+            }
+        else:
+            # Adequate section — good score
+            return {
+                "score": 82,
+                "strengths": [
+                    f"Section '{section_name}' is well-developed with sufficient detail.",
+                    "Good use of evidence and structured argumentation."
+                ],
+                "weaknesses": []
+            }
 
     system_prompt = (
         f"You are reviewing the {section_name} section of a {degree_level} thesis in {field}.\n\n"
