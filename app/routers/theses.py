@@ -138,6 +138,15 @@ async def process_thesis_version_background(version_id: str, file_path: str):
             traceback.print_exc()
             # Don't return — try to run orchestrator even if ingestion partially failed
 
+        # *** CRITICAL: refresh version after ingestion commits so section_map is reloaded ***
+        # db.commit() inside ingestion expires all ORM attributes; without refresh,
+        # version.section_map returns None and quality review scores everything 0.
+        try:
+            db.refresh(version)
+            print(f"Background task: version refreshed — section_map keys: {list((version.section_map or {}).keys())}")
+        except Exception as e:
+            print(f"Background task: refresh failed — {e}")
+
         # Step 2: Orchestrator (citation, quality, plagiarism, novelty reviews)
         try:
             await run_on_thesis_update(db, version)
